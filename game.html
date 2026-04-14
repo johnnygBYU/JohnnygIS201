@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Platformer Adventure</title>
+<style>
+body { margin:0; overflow:hidden; font-family:sans-serif; background:#0b0f1a; }
+
+#menu {
+  position:absolute; width:100%; height:100%; display:flex;
+  align-items:center; justify-content:center; flex-direction:column;
+  color:white; background:#000a; text-align:center;
+}
+
+button { padding:12px 25px; margin:6px; font-size:16px; border:none;
+  border-radius:8px; background:#4cafef; color:white; cursor:pointer; }
+
+canvas { display:block; }
+
+#hud {
+  position:absolute; top:15px; left:15px;
+  color:white; font-size:28px; font-weight:bold;
+}
+
+#topbar {
+  position:absolute;
+  top:10px;
+  right:10px;
+  display:none;
+}
+
+.levels { display:flex; flex-wrap:wrap; justify-content:center; max-width:300px; }
+</style>
+</head>
+<body>
+
+<div id="menu">
+  <h1>Platformer Adventure</h1>
+  <button onclick="startGame(0)">Start Game</button>
+  <button onclick="showControls()">Controls</button>
+
+  <h3>Select Level</h3>
+  <div class="levels">
+    <button onclick="startGame(0)">1</button>
+    <button onclick="startGame(1)">2</button>
+    <button onclick="startGame(2)">3</button>
+    <button onclick="startGame(3)">4</button>
+    <button onclick="startGame(4)">5</button>
+  </div>
+
+  <div id="controlsText" style="display:none; margin-top:15px;">
+    <p>Move: A/D or Arrow Keys</p>
+    <p>Jump: Spacebar</p>
+    <p>Reach the GOLD platform to finish each level!</p>
+  </div>
+</div>
+
+<div id="hud">Time: 0.00s</div>
+
+<div id="topbar">
+  <button onclick="returnToMenu()">Menu</button>
+</div>
+
+<canvas id="game"></canvas>
+
+<script>
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+let levelIndex = 0;
+let gameRunning = false;
+let startTime = 0;
+
+let coyoteTime = 0;
+let coyoteLimit = 8;
+let jumpBuffer = 0;
+let bufferLimit = 8;
+
+const AUTHOR_TIME = 35.6;
+const GOLD_TIME = 37;
+const SILVER_TIME = 40;
+const BRONZE_TIME = 45;
+
+const levels = [];
+for(let l=0;l<5;l++){
+  let arr=[];
+  let x=100;
+  let minY=120;
+  let maxY=canvas.height-120;
+  let y=maxY-50;
+
+  for(let i=0;i<6;i++){
+    arr.push({x:x,y:y,w:150,h:20});
+    x+=300;
+
+    let change=(Math.random()*120)-60;
+    y+=change;
+
+    if(y<minY) y=minY;
+    if(y>maxY) y=maxY;
+  }
+
+  arr.push({x:x,y:y,w:180,h:20,goal:true});
+  levels.push(arr);
+}
+
+let player = {
+    x:100,y:450,w:30,h:30,
+    vx:0,vy:0,
+    speed:1.05,
+    jump:-12,
+    gravity:0.6,
+    grounded:false
+};
+
+let keys = {};
+let cameraX = 0;
+
+function showControls(){
+  let el=document.getElementById("controlsText");
+  el.style.display=el.style.display==="none"?"block":"none";
+}
+
+function startGame(level=0){
+    document.getElementById("menu").style.display="none";
+    document.getElementById("topbar").style.display="block";
+    gameRunning=true;
+    startTime=performance.now();
+    loadLevel(level);
+    loop();
+}
+
+function returnToMenu(){
+    gameRunning=false;
+    document.getElementById("menu").style.display="flex";
+    document.getElementById("topbar").style.display="none";
+}
+
+function loadLevel(i){
+    levelIndex=i;
+    player.x=100; player.y=400;
+    player.vx=0; player.vy=0;
+}
+
+function getMedal(t){
+    if(t<=AUTHOR_TIME) return "🏆 PLATINUM";
+    if(t<=GOLD_TIME) return "🥇 GOLD";
+    if(t<=SILVER_TIME) return "🥈 SILVER";
+    if(t<=BRONZE_TIME) return "🥉 BRONZE";
+    return "No Medal";
+}
+
+function update(){
+    if(keys["ArrowLeft"]||keys["a"]) player.vx-=player.speed;
+    if(keys["ArrowRight"]||keys["d"]) player.vx+=player.speed;
+
+    player.vx*=0.8;
+    player.vy+=player.gravity;
+
+    player.x+=player.vx;
+    player.y+=player.vy;
+
+    player.grounded=false;
+
+    let platforms=levels[levelIndex];
+
+    platforms.forEach(p=>{
+        if(player.x<p.x+p.w && player.x+player.w>p.x && player.y+player.h<=p.y+10 && player.y+player.h+player.vy>=p.y){
+            player.y=p.y-player.h;
+            player.vy=0;
+            player.grounded=true;
+            coyoteTime=coyoteLimit;
+
+            if(p.goal){
+                if(levelIndex<levels.length-1){
+                    loadLevel(levelIndex+1);
+                } else {
+                    gameRunning=false;
+                    let t=(performance.now()-startTime)/1000;
+                    let medal=getMedal(t);
+
+                    document.getElementById("menu").style.display="flex";
+                    document.getElementById("menu").innerHTML=`
+                      <h1>You Win!</h1>
+                      <p>Your Time: ${t.toFixed(2)}s</p>
+                      <h2>${medal}</h2>
+                      <button onclick="location.reload()">Play Again</button>
+                    `;
+                }
+            }
+        }
+    });
+
+    if(coyoteTime>0) coyoteTime--;
+    if(jumpBuffer>0) jumpBuffer--;
+
+    if(jumpBuffer>0 && (player.grounded||coyoteTime>0)){
+        player.vy=player.jump;
+        jumpBuffer=0;
+    }
+
+    if(player.y>canvas.height+100) loadLevel(levelIndex);
+
+    cameraX=player.x-canvas.width/2;
+
+    if(gameRunning){
+        let t=(performance.now()-startTime)/1000;
+        document.getElementById("hud").innerText="Time: "+t.toFixed(2)+"s";
+    }
+}
+
+function draw(){
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+
+    ctx.save();
+    ctx.translate(-cameraX,0);
+
+    levels[levelIndex].forEach(p=>{
+        ctx.fillStyle=p.goal?"gold":"#4cafef";
+        ctx.fillRect(p.x,p.y,p.w,p.h);
+    });
+
+    ctx.fillStyle="white";
+    ctx.fillRect(player.x,player.y,player.w,player.h);
+
+    ctx.restore();
+}
+
+function loop(){
+    if(!gameRunning) return;
+    update();
+    draw();
+    requestAnimationFrame(loop);
+}
+
+window.addEventListener("keydown",e=>{
+    keys[e.key]=true;
+    if(e.code==="Space") jumpBuffer=bufferLimit;
+});
+window.addEventListener("keyup",e=>{
+    keys[e.key]=false;
+});
+</script>
+</body>
+</html>
